@@ -38,7 +38,7 @@ import com.google.gson.Gson;
 /**
  * Parses a json event.
  * @author ravi.magham
- * @author Dev Anand 
+ * @author dev.anand 20170731
  */
 public class JsonEventParser implements EventParser {
 
