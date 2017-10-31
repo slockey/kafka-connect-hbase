@@ -17,14 +17,12 @@
  */
 package io.svectors.hbase.sink;
 
-import java.util.List;
-import java.util.Map;
-
-import org.apache.kafka.common.config.ConfigDef;
+import com.google.common.collect.Lists;
 import org.apache.kafka.connect.connector.Task;
 import org.apache.kafka.connect.sink.SinkConnector;
 
-import com.google.common.collect.Lists;
+import java.util.List;
+import java.util.Map;
 
 /**
  * @author ravi.magham
@@ -62,11 +60,4 @@ public class HBaseSinkConnector extends SinkConnector {
     public void stop() {
         // NO-OP
     }
-
-    @Override
-    public ConfigDef config() {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
 }
