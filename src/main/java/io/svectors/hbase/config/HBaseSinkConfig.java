@@ -17,16 +17,14 @@
  */
 package io.svectors.hbase.config;
 
-import java.util.Map;
-
+import com.google.common.base.Preconditions;
+import io.svectors.hbase.parser.EventParser;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
-import org.apache.kafka.connect.sink.SinkTask;
+import org.apache.kafka.connect.runtime.ConnectorConfig;
 
-import com.google.common.base.Preconditions;
-
-import io.svectors.hbase.parser.EventParser;
+import java.util.Map;
 
 /**
  * @author ravi.magham
@@ -73,7 +71,7 @@ public class HBaseSinkConfig extends AbstractConfig {
      * Validates the properties to ensure the rowkey property is configured for each table.
      */
     public void validate() {
-        final String topicsAsStr = properties.get(SinkTask.TOPICS_CONFIG);
+        final String topicsAsStr = properties.get(ConnectorConfig.TOPICS_CONFIG);
         final String[] topics = topicsAsStr.split(",");
         for(String topic : topics) {
             String key = String.format(TABLE_ROWKEY_COLUMNS_TEMPLATE, topic);

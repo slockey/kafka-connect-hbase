@@ -37,8 +37,8 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.data.Struct;
+import org.apache.kafka.connect.runtime.ConnectorConfig;
 import org.apache.kafka.connect.sink.SinkRecord;
-import org.apache.kafka.connect.sink.SinkTask;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -73,7 +73,7 @@ public class TestHbaseSinkTask {
         configProps.put("hbase.test.rowkey.columns", "id");
         configProps.put("hbase.test.rowkey.delimiter", "|");
         configProps.put("hbase.test.family", columnFamily);
-        configProps.put(SinkTask.TOPICS_CONFIG, hbaseTable);
+        configProps.put(ConnectorConfig.TOPICS_CONFIG, hbaseTable);
         configProps.put(HBaseSinkConfig.ZOOKEEPER_QUORUM_CONFIG, TO_LOCAL_URI.apply(getUtility().getZkCluster()
           .getClientPort()));
     }
