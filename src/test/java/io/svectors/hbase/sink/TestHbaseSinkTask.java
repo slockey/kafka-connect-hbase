@@ -17,7 +17,10 @@
  */
 package io.svectors.hbase.sink;
 
-import static io.svectors.hbase.sink.HbaseTestUtil.*;
+import static io.svectors.hbase.sink.HbaseTestUtil.createTable;
+import static io.svectors.hbase.sink.HbaseTestUtil.getUtility;
+import static io.svectors.hbase.sink.HbaseTestUtil.startMiniCluster;
+import static io.svectors.hbase.sink.HbaseTestUtil.stopMiniCluster;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -37,8 +40,8 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.data.Struct;
-import org.apache.kafka.connect.runtime.ConnectorConfig;
 import org.apache.kafka.connect.sink.SinkRecord;
+import org.apache.kafka.connect.sink.SinkTask;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -73,9 +76,9 @@ public class TestHbaseSinkTask {
         configProps.put("hbase.test.rowkey.columns", "id");
         configProps.put("hbase.test.rowkey.delimiter", "|");
         configProps.put("hbase.test.family", columnFamily);
-        configProps.put(ConnectorConfig.TOPICS_CONFIG, hbaseTable);
+        configProps.put(SinkTask.TOPICS_CONFIG, hbaseTable);
         configProps.put(HBaseSinkConfig.ZOOKEEPER_QUORUM_CONFIG, TO_LOCAL_URI.apply(getUtility().getZkCluster()
-          .getClientPort()));
+                .getClientPort()));
     }
 
     @Test
@@ -100,20 +103,20 @@ public class TestHbaseSinkTask {
         task.start(configProps);
 
         final Schema valueSchema = SchemaBuilder.struct().name("record").version(1)
-          .field("url", Schema.STRING_SCHEMA)
-          .field("id", Schema.INT32_SCHEMA)
-          .field("zipcode", Schema.INT32_SCHEMA)
-          .field("status", Schema.INT32_SCHEMA)
-          .build();
+                .field("url", Schema.STRING_SCHEMA)
+                .field("id", Schema.INT32_SCHEMA)
+                .field("zipcode", Schema.INT32_SCHEMA)
+                .field("status", Schema.INT32_SCHEMA)
+                .build();
 
         Collection<SinkRecord> sinkRecords = new ArrayList<>();
         int noOfRecords = 10;
         for (int i = 1; i <= noOfRecords; i++) {
             final Struct record = new Struct(valueSchema)
-              .put("url", "google.com")
-              .put("id", i)
-              .put("zipcode", 95050 + i)
-              .put("status", 400 + i);
+                    .put("url", "google.com")
+                    .put("id", i)
+                    .put("zipcode", 95050 + i)
+                    .put("status", 400 + i);
             SinkRecord sinkRecord = new SinkRecord(hbaseTable, 0, null, null, valueSchema, record, i);
             sinkRecords.add(sinkRecord);
         }
@@ -124,7 +127,7 @@ public class TestHbaseSinkTask {
         TableName table = TableName.valueOf(hbaseTable);
         Scan scan = new Scan();
         try (Table hTable = ConnectionFactory.createConnection(configuration).getTable(table);
-             ResultScanner results = hTable.getScanner(scan);) {
+                ResultScanner results = hTable.getScanner(scan);) {
             int count = 0;
             for (Result result : results) {
                 int rowId = Bytes.toInt(result.getRow());
@@ -137,7 +140,7 @@ public class TestHbaseSinkTask {
         }
         task.stop();
     }
-    
+
     /**
      * Performs write through kafka connect and validates the data in hbase.
      *
@@ -156,7 +159,7 @@ public class TestHbaseSinkTask {
             record.put("zipcode", 95050 + i);
             record.put("status", 400 + 1);
             final SinkRecord sinkRecord = new SinkRecord("test", 0, null, null, null, record, 0);
-            
+
             sinkRecords.add(sinkRecord);
         }
 
@@ -166,7 +169,7 @@ public class TestHbaseSinkTask {
         TableName table = TableName.valueOf(hbaseTable);
         Scan scan = new Scan();
         try (Table hTable = ConnectionFactory.createConnection(configuration).getTable(table);
-             ResultScanner results = hTable.getScanner(scan);) {
+                ResultScanner results = hTable.getScanner(scan);) {
             int count = 0;
             for (Result result : results) {
                 int rowId = Bytes.toInt(result.getRow());
