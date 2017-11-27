@@ -17,14 +17,16 @@
  */
 package io.svectors.hbase.config;
 
-import com.google.common.base.Preconditions;
-import io.svectors.hbase.parser.EventParser;
+import java.util.Map;
+
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
-import org.apache.kafka.connect.runtime.ConnectorConfig;
+import org.apache.kafka.connect.sink.SinkTask;
 
-import java.util.Map;
+import com.google.common.base.Preconditions;
+
+import io.svectors.hbase.parser.EventParser;
 
 /**
  * @author ravi.magham
@@ -51,10 +53,10 @@ public class HBaseSinkConfig extends AbstractConfig {
     static {
 
         CONFIG.define(ZOOKEEPER_QUORUM_CONFIG, ConfigDef.Type.STRING, ConfigDef.Importance.HIGH, "Zookeeper quorum " +
-          "of the hbase cluster");
+                "of the hbase cluster");
 
         CONFIG.define(EVENT_PARSER_CONFIG, ConfigDef.Type.STRING, ConfigDef.Importance.HIGH, "Event parser class " +
-          "to parse the SinkRecord");
+                "to parse the SinkRecord");
 
     }
 
@@ -71,7 +73,7 @@ public class HBaseSinkConfig extends AbstractConfig {
      * Validates the properties to ensure the rowkey property is configured for each table.
      */
     public void validate() {
-        final String topicsAsStr = properties.get(ConnectorConfig.TOPICS_CONFIG);
+        final String topicsAsStr = properties.get(SinkTask.TOPICS_CONFIG);
         final String[] topics = topicsAsStr.split(",");
         for(String topic : topics) {
             String key = String.format(TABLE_ROWKEY_COLUMNS_TEMPLATE, topic);
