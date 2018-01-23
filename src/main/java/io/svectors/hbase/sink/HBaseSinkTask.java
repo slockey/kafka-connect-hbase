@@ -41,8 +41,8 @@ import org.slf4j.LoggerFactory;
 import io.svectors.hbase.HBaseClient;
 import io.svectors.hbase.HBaseConnectionFactory;
 import io.svectors.hbase.config.HBaseSinkConfig;
-import io.svectors.hbase.util.ToPutFunction;
 import io.svectors.hbase.util.HbaseTransactionTimer;
+import io.svectors.hbase.util.ToPutFunction;
 
 /**
  * @author ravi.magham
@@ -61,6 +61,9 @@ public class HBaseSinkTask extends SinkTask  {
     public void start(Map<String, String> props) {
         final HBaseSinkConfig sinkConfig = new HBaseSinkConfig(props);
         Map<String, String> configMap = new TreeMap<String, String>(props);
+
+        logger.debug("HBaseSinkTask.start - thread id: "+Thread.currentThread().getId() + " name: " + Thread.currentThread().getName());
+
         logger.info("Printing connection configurations:");
         for (Map.Entry entry : configMap.entrySet()) {
             logger.info(entry.getKey() + "......." + entry.getValue());
@@ -74,19 +77,7 @@ public class HBaseSinkTask extends SinkTask  {
         HBaseConnectionFactory connectionFactory = new HBaseConnectionFactory(
                 configuration);
         this.hBaseClient = new HBaseClient(connectionFactory);
-        int count = 1;
-        try {
-            if (this.hBaseClient.establishConnection().isClosed() && count <= 5) {
-                logger.warn("HBase client is down. Trying to init. Attempt "+count+" of 5");
-                configuration = HBaseConfiguration.create();
-                configuration.set(HConstants.ZOOKEEPER_QUORUM, zookeeperQuorum);
-                connectionFactory = new HBaseConnectionFactory(configuration);
-                this.hBaseClient = new HBaseClient(connectionFactory);
-                count++;
-            }
-        } catch (Exception e) {
-            logger.error("Unable to start Hbase Client:" + e.getMessage());
-        }
+
         this.toPutFunction = new ToPutFunction(sinkConfig);
         Timer time = new Timer();
         time.schedule(new HbaseTransactionTimer(this.hBaseClient), 0, 180000); // check in every 3 min
@@ -102,13 +93,6 @@ public class HBaseSinkTask extends SinkTask  {
                         .map(sr -> toPutFunction.apply(sr)).collect(toList())));
 
         byTable.entrySet().parallelStream().forEach(entry -> {
-            try {
-                if (this.hBaseClient.establishConnection().isClosed()) {
-                   logger.error("Hbase client is down");
-                }
-            } catch (Exception e) {
-                logger.error("Unable to access Hbase Client:" + e.getMessage());
-            }
             hBaseClient.write(entry.getKey(), entry.getValue());
         });
     }
@@ -120,6 +104,7 @@ public class HBaseSinkTask extends SinkTask  {
 
     @Override
     public void stop() {
-        // NO-OP
+        logger.debug("HBaseSinkTask.stop - thread id: "+Thread.currentThread().getId() + " name: " + Thread.currentThread().getName());
+        this.hBaseClient.close();
     }
 }

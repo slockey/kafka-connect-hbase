@@ -17,6 +17,7 @@
  */
 package io.svectors.hbase;
 
+import java.io.IOException;
 import java.util.List;
 
 import org.apache.hadoop.hbase.TableName;
@@ -35,16 +36,18 @@ import io.svectors.hbase.util.TrackHbaseWrite;
  * @author ravi.magham
  */
 public final class HBaseClient implements TrackHbaseWrite{
-    //public final class HBaseClient implements TrackHbaseWrite {
-   long lastWrittenAt = System.currentTimeMillis();
-   String lastWrittenUuid="";
+
     final static Logger logger = LoggerFactory.getLogger(HBaseClient.class);
 
+    private long lastWrittenAt = System.currentTimeMillis();
+    private String lastWrittenUuid="";
     private final HBaseConnectionFactory connectionFactory;
+    private BufferedMutator mutator = null;
+    private Connection connection = null;
 
     public HBaseClient(final HBaseConnectionFactory connectionFactory) {
         this.connectionFactory = connectionFactory;
-        }
+    }
 
     public void write(final String tableName, final List<Put> puts) {
         Preconditions.checkNotNull(tableName);
@@ -54,21 +57,30 @@ public final class HBaseClient implements TrackHbaseWrite{
     }
 
     public void write(final TableName table, final List<Put> puts) {
+        logger.debug("thread id: "+Thread.currentThread().getId() + " name: " + Thread.currentThread().getName());
+
         Preconditions.checkNotNull(table);
         Preconditions.checkNotNull(puts);
         try {
-            final Connection connection = establishConnection();
-            final BufferedMutator mutator = connection
-                    .getBufferedMutator(table);
+            if (connection == null || mutator == null || connection.isAborted() || connection.isClosed()) {
+                connection = establishConnection();
+                mutator = connection.getBufferedMutator(table);
+            }
+
+            logger.debug("connection hashcode: " + connection.hashCode());
+            logger.debug("mutator hashcode: " + mutator.hashCode());
+            logger.debug("puts count: " + puts.size());
             mutator.mutate(puts);
             mutator.flush();
-            
+            logger.debug("mutator.flush()");
+
             for (Put put:puts) {
                 if (put!=null) {
-                this.lastWrittenUuid = new String(new String(put.getRow()));
-                this.lastWrittenAt = System.currentTimeMillis();
+                    this.lastWrittenUuid = new String(new String(put.getRow()));
+                    this.lastWrittenAt = System.currentTimeMillis();
                 }
             }
+
         } catch (Exception ex) {
             logger.error(String.format(
                     "Failed with a [%s] when writing to table [%s] ",
@@ -92,9 +104,16 @@ public final class HBaseClient implements TrackHbaseWrite{
 
     @Override
     public String getLastWrittenUUid() {
-        // TODO Auto-generated method stub
         return lastWrittenUuid;
     }
+
+    public void close() {
+        try {
+            mutator.close();
+            connection.close();
+        } catch (IOException e) {
+            logger.debug("Exception closing connection OR mutator" + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 }
-
-
