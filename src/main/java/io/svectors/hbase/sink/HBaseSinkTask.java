@@ -100,15 +100,7 @@ public class HBaseSinkTask extends SinkTask  {
         Map<String, List<Put>> byTable = byTopic.entrySet().stream()
                 .collect(toMap(Map.Entry::getKey, (e) -> e.getValue().stream()
                         .map(sr -> toPutFunction.apply(sr)).collect(toList())));
-
         byTable.entrySet().parallelStream().forEach(entry -> {
-            try {
-                if (this.hBaseClient.establishConnection().isClosed()) {
-                   logger.error("Hbase client is down");
-                }
-            } catch (Exception e) {
-                logger.error("Unable to access Hbase Client:" + e.getMessage());
-            }
             hBaseClient.write(entry.getKey(), entry.getValue());
         });
     }
