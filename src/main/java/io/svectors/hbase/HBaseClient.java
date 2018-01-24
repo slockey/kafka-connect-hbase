@@ -62,8 +62,12 @@ public final class HBaseClient implements TrackHbaseWrite{
         Preconditions.checkNotNull(table);
         Preconditions.checkNotNull(puts);
         try {
-            if (connection == null || mutator == null || connection.isAborted() || connection.isClosed()) {
-                connection = establishConnection();
+
+            if (!isConnectionOpen()) {
+                establishConnection();
+            }
+
+            if (mutator == null) {
                 mutator = connection.getBufferedMutator(table);
             }
 
@@ -92,11 +96,6 @@ public final class HBaseClient implements TrackHbaseWrite{
         }
     }
 
-    public Connection establishConnection() throws Exception {
-        final Connection connection = this.connectionFactory.getConnection();
-        return connection;
-    }
-
     @Override
     public long getRecentTransactionTime() {
         return this.lastWrittenAt;
@@ -105,6 +104,17 @@ public final class HBaseClient implements TrackHbaseWrite{
     @Override
     public String getLastWrittenUUid() {
         return lastWrittenUuid;
+    }
+
+    public void establishConnection() throws IOException {
+        this.connection = this.connectionFactory.getConnection();
+    }
+
+    public boolean isConnectionOpen() {
+        if (connection == null || connection.isAborted() || connection.isClosed()) {
+            return false;
+        }
+        return true;
     }
 
     public void close() {
