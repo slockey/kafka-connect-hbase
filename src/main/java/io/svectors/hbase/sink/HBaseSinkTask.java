@@ -94,7 +94,8 @@ public class HBaseSinkTask extends SinkTask  {
 
     @Override
     public void put(Collection<SinkRecord> records) {
-        //Verify that hbase connection is valid before pulling of the stream
+
+      //Verify that hbase connection is valid before pulling of the stream
         if (!hBaseClient.isConnectionOpen()) {
             try {
                 // re-initialize the persistent hbase connection
