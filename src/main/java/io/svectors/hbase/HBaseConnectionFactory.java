@@ -17,6 +17,8 @@
  */
 package io.svectors.hbase;
 
+import java.io.IOException;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
@@ -32,7 +34,7 @@ public class HBaseConnectionFactory {
         this.configuration = configuration;
     }
 
-    public Connection getConnection() throws Exception {
+    public Connection getConnection() throws IOException {
         return ConnectionFactory.createConnection(configuration);
     }
 }

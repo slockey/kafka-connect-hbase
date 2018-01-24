@@ -21,6 +21,7 @@ import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 
+import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -41,8 +42,8 @@ import org.slf4j.LoggerFactory;
 import io.svectors.hbase.HBaseClient;
 import io.svectors.hbase.HBaseConnectionFactory;
 import io.svectors.hbase.config.HBaseSinkConfig;
-import io.svectors.hbase.util.ToPutFunction;
 import io.svectors.hbase.util.HbaseTransactionTimer;
+import io.svectors.hbase.util.ToPutFunction;
 
 /**
  * @author ravi.magham
@@ -61,6 +62,9 @@ public class HBaseSinkTask extends SinkTask  {
     public void start(Map<String, String> props) {
         final HBaseSinkConfig sinkConfig = new HBaseSinkConfig(props);
         Map<String, String> configMap = new TreeMap<String, String>(props);
+
+        logger.debug("HBaseSinkTask.start - thread id: "+Thread.currentThread().getId() + " name: " + Thread.currentThread().getName());
+
         logger.info("Printing connection configurations:");
         for (Map.Entry entry : configMap.entrySet()) {
             logger.info(entry.getKey() + "......." + entry.getValue());
@@ -74,19 +78,15 @@ public class HBaseSinkTask extends SinkTask  {
         HBaseConnectionFactory connectionFactory = new HBaseConnectionFactory(
                 configuration);
         this.hBaseClient = new HBaseClient(connectionFactory);
-        int count = 1;
+
         try {
-            if (this.hBaseClient.establishConnection().isClosed() && count <= 5) {
-                logger.warn("HBase client is down. Trying to init. Attempt "+count+" of 5");
-                configuration = HBaseConfiguration.create();
-                configuration.set(HConstants.ZOOKEEPER_QUORUM, zookeeperQuorum);
-                connectionFactory = new HBaseConnectionFactory(configuration);
-                this.hBaseClient = new HBaseClient(connectionFactory);
-                count++;
-            }
-        } catch (Exception e) {
-            logger.error("Unable to start Hbase Client:" + e.getMessage());
+            // initialize the persistent hbase connection
+            this.hBaseClient.establishConnection();
+        } catch (IOException e) {
+            logger.error("Unable to establish connection with Hbase.  zoo quorum: " + zookeeperQuorum);
+            e.printStackTrace();
         }
+
         this.toPutFunction = new ToPutFunction(sinkConfig);
         Timer time = new Timer();
         time.schedule(new HbaseTransactionTimer(this.hBaseClient), 0, 180000); // check in every 3 min
@@ -94,15 +94,32 @@ public class HBaseSinkTask extends SinkTask  {
 
     @Override
     public void put(Collection<SinkRecord> records) {
-        Map<String, List<SinkRecord>> byTopic = records.stream()
-                .collect(groupingBy(SinkRecord::topic));
 
-        Map<String, List<Put>> byTable = byTopic.entrySet().stream()
-                .collect(toMap(Map.Entry::getKey, (e) -> e.getValue().stream()
-                        .map(sr -> toPutFunction.apply(sr)).collect(toList())));
-        byTable.entrySet().parallelStream().forEach(entry -> {
-            hBaseClient.write(entry.getKey(), entry.getValue());
-        });
+      //Verify that hbase connection is valid before pulling of the stream
+        if (!hBaseClient.isConnectionOpen()) {
+            try {
+                // re-initialize the persistent hbase connection
+                this.hBaseClient.establishConnection();
+            } catch (IOException e) {
+                logger.error("Unable to re-establish connection with Hbase");
+                e.printStackTrace();
+            }
+        }
+
+        // test connection again before pulling from stream
+        if (hBaseClient.isConnectionOpen()) {
+
+            Map<String, List<SinkRecord>> byTopic = records.stream()
+                    .collect(groupingBy(SinkRecord::topic));
+
+            Map<String, List<Put>> byTable = byTopic.entrySet().stream()
+                    .collect(toMap(Map.Entry::getKey, (e) -> e.getValue().stream()
+                            .map(sr -> toPutFunction.apply(sr)).collect(toList())));
+
+            byTable.entrySet().parallelStream().forEach(entry -> {
+                hBaseClient.write(entry.getKey(), entry.getValue());
+            });
+        }
     }
 
     @Override
@@ -112,6 +129,7 @@ public class HBaseSinkTask extends SinkTask  {
 
     @Override
     public void stop() {
-        // NO-OP
+        logger.debug("HBaseSinkTask.stop - thread id: "+Thread.currentThread().getId() + " name: " + Thread.currentThread().getName());
+        this.hBaseClient.close();
     }
 }
