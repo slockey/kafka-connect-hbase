@@ -48,6 +48,7 @@ import io.svectors.hbase.util.HbaseTransactionTimer;
  * @author ravi.magham
  */
 public class HBaseSinkTask extends SinkTask  {
+    private static final String HBASE_PRODUCER_TOPIC = "hbase.producer.topic";
     final static Logger logger = LoggerFactory.getLogger(HBaseSinkTask.class);
     private ToPutFunction toPutFunction;
     private HBaseClient hBaseClient;
@@ -71,15 +72,19 @@ public class HBaseSinkTask extends SinkTask  {
                 .getString(HBaseSinkConfig.ZOOKEEPER_QUORUM_CONFIG);
         Configuration configuration = HBaseConfiguration.create();
         configuration.set(HConstants.ZOOKEEPER_QUORUM, zookeeperQuorum);
+        if (sinkConfig.getPropertyValue(HBASE_PRODUCER_TOPIC) != null) {
+            configuration.set(HBASE_PRODUCER_TOPIC, sinkConfig.getPropertyValue(HBASE_PRODUCER_TOPIC));
+        }
         HBaseConnectionFactory connectionFactory = new HBaseConnectionFactory(
                 configuration);
-        this.hBaseClient = new HBaseClient(connectionFactory);
         int count = 1;
         try {
+            this.hBaseClient = new HBaseClient(connectionFactory);
             if (this.hBaseClient.establishConnection().isClosed() && count <= 5) {
                 logger.warn("HBase client is down. Trying to init. Attempt "+count+" of 5");
                 configuration = HBaseConfiguration.create();
                 configuration.set(HConstants.ZOOKEEPER_QUORUM, zookeeperQuorum);
+                configuration.set(HBASE_PRODUCER_TOPIC, sinkConfig.getPropertyValue(HBASE_PRODUCER_TOPIC));
                 connectionFactory = new HBaseConnectionFactory(configuration);
                 this.hBaseClient = new HBaseClient(connectionFactory);
                 count++;
@@ -94,6 +99,7 @@ public class HBaseSinkTask extends SinkTask  {
 
     @Override
     public void put(Collection<SinkRecord> records) {
+        
         Map<String, List<SinkRecord>> byTopic = records.stream()
                 .collect(groupingBy(SinkRecord::topic));
 
@@ -101,7 +107,11 @@ public class HBaseSinkTask extends SinkTask  {
                 .collect(toMap(Map.Entry::getKey, (e) -> e.getValue().stream()
                         .map(sr -> toPutFunction.apply(sr)).collect(toList())));
         byTable.entrySet().parallelStream().forEach(entry -> {
-            hBaseClient.write(entry.getKey(), entry.getValue());
+            try {
+                hBaseClient.write(entry.getKey(), entry.getValue());
+            } catch (Exception e1) {
+               logger.error(e1.getMessage());;
+            }
         });
     }
 

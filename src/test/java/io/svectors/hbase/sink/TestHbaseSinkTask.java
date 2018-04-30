@@ -58,6 +58,7 @@ import io.svectors.hbase.parser.JsonEventParser;
  * @author ravi.magham
  * @author dev.anand 20170731
  */
+
 public class TestHbaseSinkTask {
 
     private final Function<Integer, String> TO_LOCAL_URI = (port) -> "localhost:" + port;
