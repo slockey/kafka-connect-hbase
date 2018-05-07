@@ -17,16 +17,30 @@
  */
 package io.svectors.hbase;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.List;
+import java.util.NavigableMap;
+import java.util.Properties;
 
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.BufferedMutator;
 import org.apache.hadoop.hbase.client.Connection;
+import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.Table;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.CellUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.base.Preconditions;
 
 import io.svectors.hbase.sink.SinkConnectorException;
@@ -37,16 +51,31 @@ import io.svectors.hbase.util.TrackHbaseWrite;
  */
 public final class HBaseClient implements TrackHbaseWrite{
 
-    final static Logger logger = LoggerFactory.getLogger(HBaseClient.class);
-
+    private static final String HBASE_PRODUCER_TOPIC = "hbase.producer.topic";
     private long lastWrittenAt = System.currentTimeMillis();
     private String lastWrittenUuid="";
+    private Properties producerProp = new Properties();
+    private Producer<String, JsonNode> hbaseProducer = null;
+    private final static Logger logger = LoggerFactory.getLogger(HBaseClient.class);
     private final HBaseConnectionFactory connectionFactory;
     private BufferedMutator mutator = null;
     private Connection connection = null;
+    private boolean producerEnabled = false;
+    private static final ObjectMapper mapper = new ObjectMapper();
+    private String producerTopic;
 
-    public HBaseClient(final HBaseConnectionFactory connectionFactory) {
+    public HBaseClient(final HBaseConnectionFactory connectionFactory) throws Exception {
         this.connectionFactory = connectionFactory;
+        this.connection = establishConnection();
+        if (producerEnabled) {
+            producerProp.put("bootstrap.servers", "localhost:9092");
+            producerProp.put("key.serializer",
+                    "org.apache.kafka.connect.json.JsonSerializer");
+            producerProp.put("value.serializer",
+                    "org.apache.kafka.connect.json.JsonSerializer");
+            producerProp.put("linger.ms", 1000);
+            this.hbaseProducer = new KafkaProducer<String, JsonNode>(producerProp);
+        }
     }
 
     public void write(final String tableName, final List<Put> puts) {
@@ -79,10 +108,23 @@ public final class HBaseClient implements TrackHbaseWrite{
             logger.debug("mutator.flush()");
 
             for (Put put:puts) {
-                if (put!=null) {
-                    this.lastWrittenUuid = new String(new String(put.getRow()));
-                    this.lastWrittenAt = System.currentTimeMillis();
+                byte[] id = put.getRow();
+                String stringUuid = new String(id);
+                if (producerEnabled) {
+                    Get getId = new Get(id);
+                    Table getTable = connection.getTable(table);
+                    if (getTable.exists(getId)) {
+                        JsonNode record = createHbaseRecord(put);
+                        addToTopic(record, stringUuid);
+                    } else {
+                        logger.info("Something went wrong. " + stringUuid
+                                + " does not exist in Hbase");
+                    }
+                } else {
+                    logger.info("Your producer configuration is disabled/lost");
                 }
+                this.lastWrittenUuid = stringUuid;
+                this.lastWrittenAt = System.currentTimeMillis();
             }
 
         } catch (Exception ex) {
@@ -96,6 +138,42 @@ public final class HBaseClient implements TrackHbaseWrite{
         }
     }
 
+    private JsonNode createHbaseRecord(Put put)
+            throws IOException, JsonProcessingException {
+        JsonNode record = new ObjectMapper().createObjectNode();
+        NavigableMap<byte[], List<Cell>> cellMap = put
+                .getFamilyCellMap();
+        List<Cell> cellList = cellMap.firstEntry().getValue();
+        for (Cell cell : cellList) {
+            String qualifier = new String(
+                    CellUtil.cloneQualifier(cell));
+            byte[] valueByte = CellUtil.cloneValue(cell);
+            String valueString = new String(valueByte);
+            boolean isValidJson = validate(valueString);
+            if (!isValidJson) {
+                ((ObjectNode) record).put(qualifier, valueString);
+            } else {
+                //put will insert escape for all double-quotes. hence using set
+                ((ObjectNode) record).set(qualifier,
+                        mapper.readTree(
+                                new ByteArrayInputStream(
+                                        valueByte)));
+            }
+        }
+        return record;
+    }
+
+    private void addToTopic(JsonNode record, String uuid) {
+        logger.info("Pushing a new record with id: "
+                + uuid + " to " + producerTopic);
+        try {
+            hbaseProducer.send(new ProducerRecord<String, JsonNode>(
+                    producerTopic, record));
+        } catch (Exception e) {
+            logger.info("Failed to write "+ record.asText() +" to the producer topic:"+e.getMessage());
+        }
+    }
+
     @Override
     public long getRecentTransactionTime() {
         return this.lastWrittenAt;
@@ -106,8 +184,13 @@ public final class HBaseClient implements TrackHbaseWrite{
         return lastWrittenUuid;
     }
 
-    public void establishConnection() throws IOException {
-        this.connection = this.connectionFactory.getConnection();
+    public Connection establishConnection() throws Exception {
+        final Connection connection = this.connectionFactory.getConnection();
+        if (connection.getConfiguration().getRaw(HBASE_PRODUCER_TOPIC) != null) {
+            this.producerTopic = connection.getConfiguration().get(HBASE_PRODUCER_TOPIC);
+            this.producerEnabled = true;
+        }
+        return connection;
     }
 
     public boolean isConnectionOpen() {
@@ -123,7 +206,15 @@ public final class HBaseClient implements TrackHbaseWrite{
             connection.close();
         } catch (IOException e) {
             logger.debug("Exception closing connection OR mutator" + e.getMessage());
-            e.printStackTrace();
         }
     }
+
+    private static boolean validate(String jsonInString ) {
+        try {
+           mapper.readTree(jsonInString);
+           return true;
+        } catch (IOException e) {
+           return false;
+        }
+      }
 }

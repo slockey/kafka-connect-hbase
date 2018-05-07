@@ -21,7 +21,6 @@ import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 
-import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +49,7 @@ import io.svectors.hbase.util.ToPutFunction;
  */
 public class HBaseSinkTask extends SinkTask  {
     final static Logger logger = LoggerFactory.getLogger(HBaseSinkTask.class);
+    private static final String HBASE_PRODUCER_TOPIC = "hbase.producer.topic";
     private ToPutFunction toPutFunction;
     private HBaseClient hBaseClient;
 
@@ -75,17 +75,20 @@ public class HBaseSinkTask extends SinkTask  {
                 .getString(HBaseSinkConfig.ZOOKEEPER_QUORUM_CONFIG);
         Configuration configuration = HBaseConfiguration.create();
         configuration.set(HConstants.ZOOKEEPER_QUORUM, zookeeperQuorum);
+        if (sinkConfig.getPropertyValue(HBASE_PRODUCER_TOPIC) != null) {
+            configuration.set(HBASE_PRODUCER_TOPIC, sinkConfig.getPropertyValue(HBASE_PRODUCER_TOPIC));
+        }
         HBaseConnectionFactory connectionFactory = new HBaseConnectionFactory(
                 configuration);
-        this.hBaseClient = new HBaseClient(connectionFactory);
+       
 
         try {
+            this.hBaseClient = new HBaseClient(connectionFactory);
             // initialize the persistent hbase connection
             this.hBaseClient.establishConnection();
-        } catch (IOException e) {
-            logger.error("Unable to establish connection with Hbase.  zoo quorum: " + zookeeperQuorum);
-            e.printStackTrace();
-        }
+        } catch (Exception e) {
+            logger.error("Unable to establish connection with Hbase.  zoo quorum: " + zookeeperQuorum +  e.getMessage());
+        } 
 
         this.toPutFunction = new ToPutFunction(sinkConfig);
         Timer time = new Timer();
@@ -100,7 +103,7 @@ public class HBaseSinkTask extends SinkTask  {
             try {
                 // re-initialize the persistent hbase connection
                 this.hBaseClient.establishConnection();
-            } catch (IOException e) {
+            } catch (Exception e) {
                 logger.error("Unable to re-establish connection with Hbase");
                 e.printStackTrace();
             }
