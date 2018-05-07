@@ -21,7 +21,6 @@ import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 
-import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -77,7 +76,7 @@ public class HBaseSinkTask extends SinkTask  {
         Configuration configuration = HBaseConfiguration.create();
         configuration.set(HConstants.ZOOKEEPER_QUORUM, zookeeperQuorum);
         if (sinkConfig.getPropertyValue(HBASE_PRODUCER_TOPIC) != null) {
-        configuration.set(HBASE_PRODUCER_TOPIC, sinkConfig.getPropertyValue(HBASE_PRODUCER_TOPIC));
+            configuration.set(HBASE_PRODUCER_TOPIC, sinkConfig.getPropertyValue(HBASE_PRODUCER_TOPIC));
         }
         HBaseConnectionFactory connectionFactory = new HBaseConnectionFactory(
                 configuration);
@@ -88,8 +87,7 @@ public class HBaseSinkTask extends SinkTask  {
             // initialize the persistent hbase connection
             this.hBaseClient.establishConnection();
         } catch (Exception e) {
-            logger.error("Unable to establish connection with Hbase.  zoo quorum: " + zookeeperQuorum);
-            e.printStackTrace();
+            logger.error("Unable to establish connection with Hbase.  zoo quorum: " + zookeeperQuorum +  e.getMessage());
         } 
 
         this.toPutFunction = new ToPutFunction(sinkConfig);

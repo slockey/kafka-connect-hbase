@@ -37,6 +37,7 @@ import org.apache.hadoop.hbase.CellUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -113,29 +114,8 @@ public final class HBaseClient implements TrackHbaseWrite{
                     Get getId = new Get(id);
                     Table getTable = connection.getTable(table);
                     if (getTable.exists(getId)) {
-                        JsonNode record = new ObjectMapper().createObjectNode();
-                        NavigableMap<byte[], List<Cell>> cellMap = put
-                                .getFamilyCellMap();
-                        List<Cell> cellList = cellMap.firstEntry().getValue();
-                        for (Cell cell : cellList) {
-                            String qualifier = new String(
-                                    CellUtil.cloneQualifier(cell));
-                            byte[] valueByte = CellUtil.cloneValue(cell);
-                            String valueString = new String(valueByte);
-                            boolean isValidJson = isJSONValid(valueString);
-                            if (!isValidJson) {
-                                ((ObjectNode) record).put(qualifier, valueString);
-                            } else {
-                                ((ObjectNode) record).set(qualifier,
-                                        mapper.readTree(
-                                                new ByteArrayInputStream(
-                                                        valueByte)));
-                            }
-                        }
-                        logger.info("pushing a new record with id: "
-                                + stringUuid + " to " + producerTopic);
-                        hbaseProducer.send(new ProducerRecord<String, JsonNode>(
-                                producerTopic, record));
+                        JsonNode record = createHbaseRecord(put);
+                        addToTopic(record, stringUuid);
                     } else {
                         logger.info("Something went wrong. " + stringUuid
                                 + " does not exist in Hbase");
@@ -155,6 +135,42 @@ public final class HBaseClient implements TrackHbaseWrite{
                     "Failed with a [%s] when writing to table [%s] ",
                     ex.getMessage(), table.getNameAsString());
             throw new SinkConnectorException(errorMsg, ex);
+        }
+    }
+
+    private JsonNode createHbaseRecord(Put put)
+            throws IOException, JsonProcessingException {
+        JsonNode record = new ObjectMapper().createObjectNode();
+        NavigableMap<byte[], List<Cell>> cellMap = put
+                .getFamilyCellMap();
+        List<Cell> cellList = cellMap.firstEntry().getValue();
+        for (Cell cell : cellList) {
+            String qualifier = new String(
+                    CellUtil.cloneQualifier(cell));
+            byte[] valueByte = CellUtil.cloneValue(cell);
+            String valueString = new String(valueByte);
+            boolean isValidJson = validate(valueString);
+            if (!isValidJson) {
+                ((ObjectNode) record).put(qualifier, valueString);
+            } else {
+                //put will insert escape for all double-quotes. hence using set
+                ((ObjectNode) record).set(qualifier,
+                        mapper.readTree(
+                                new ByteArrayInputStream(
+                                        valueByte)));
+            }
+        }
+        return record;
+    }
+
+    private void addToTopic(JsonNode record, String uuid) {
+        logger.info("Pushing a new record with id: "
+                + uuid + " to " + producerTopic);
+        try {
+            hbaseProducer.send(new ProducerRecord<String, JsonNode>(
+                    producerTopic, record));
+        } catch (Exception e) {
+            logger.info("Failed to write "+ record.asText() +" to the producer topic:"+e.getMessage());
         }
     }
 
@@ -190,11 +206,10 @@ public final class HBaseClient implements TrackHbaseWrite{
             connection.close();
         } catch (IOException e) {
             logger.debug("Exception closing connection OR mutator" + e.getMessage());
-            e.printStackTrace();
         }
     }
 
-    private static boolean isJSONValid(String jsonInString ) {
+    private static boolean validate(String jsonInString ) {
         try {
            mapper.readTree(jsonInString);
            return true;
