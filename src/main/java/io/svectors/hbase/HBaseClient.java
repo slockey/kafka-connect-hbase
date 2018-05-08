@@ -34,6 +34,7 @@ import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellUtil;
+import org.apache.hadoop.hbase.HConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,7 +69,9 @@ public final class HBaseClient implements TrackHbaseWrite{
         this.connectionFactory = connectionFactory;
         this.connection = establishConnection();
         if (producerEnabled) {
-            producerProp.put("bootstrap.servers", "localhost:9092");
+            String zookeeperQuorum = connection.getConfiguration().get(HConstants.ZOOKEEPER_QUORUM).toString().trim();
+            String localhost = zookeeperQuorum.substring(0,zookeeperQuorum.indexOf(":"));
+            producerProp.put("bootstrap.servers", localhost+":9092");
             producerProp.put("key.serializer",
                     "org.apache.kafka.connect.json.JsonSerializer");
             producerProp.put("value.serializer",
