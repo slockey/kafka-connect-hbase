@@ -209,6 +209,8 @@ public final class HBaseClient implements TrackHbaseWrite{
             connection.close();
         } catch (IOException e) {
             logger.debug("Exception closing connection OR mutator" + e.getMessage());
+        } catch (Exception e) {
+            logger.debug("Unable to close mutator.");
         }
     }
 
